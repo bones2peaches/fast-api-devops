@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  fast-api-app:
+    container_name: api
+
+    build: .
+
+#     command:     CMD ["uvicorn", "app.main:app", "--proxy-headers", "--host", "0.0.0.0", "--port", "5000"]
+#  #"tail -f /dev/null"
+    ports:
+       - "5000:5000"
+
+    volumes:
+      - .:/home/code
+    environment:
+      - STAGE=DEV
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+    networks:
+      - testing-network
+
+      
+networks:
+  testing-network:
+    external: true        

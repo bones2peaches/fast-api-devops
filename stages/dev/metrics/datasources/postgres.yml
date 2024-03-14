@@ -1,0 +1,13 @@
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432 # Use the hostname and port of your PostgreSQL service
+    database: ${DB_NAME} # Your PostgreSQL database name
+    user: ${DB_USER} # Your PostgreSQL user
+    secureJsonData:
+      password: "${DB_PASSWORD}" # Your PostgreSQL password
+    jsonData:
+      sslMode: disable # Adjust SSL mode as needed; options include 'disable', 'require', etc.
+      postgresVersion: 1600
+      timescaledb: false
