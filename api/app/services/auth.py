@@ -9,8 +9,9 @@ from app.schema.user import SessionUser
 from app.models.user import Users
 from app.exceptions import AuthTokenExpiredHTTPException, AuthFailedHTTPException
 from app.config import settings as global_settings
+import os
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/user/session")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"/api/user/session")
 
 
 def decode_token(
@@ -39,6 +40,17 @@ def decode_token(
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+    if token is None:
+        raise AuthFailedHTTPException()
+
+    try:
+        user = decode_token(token)
+    except jwt.DecodeError:
+        raise AuthFailedHTTPException()
+    return user
+
+
+async def get_event_current_user(token: str = Query(..., alias="access_token")):
     if token is None:
         raise AuthFailedHTTPException()
 

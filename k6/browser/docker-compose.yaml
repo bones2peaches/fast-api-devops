@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  k6:
+    image: grafana/k6:master-with-browser
+    command: run /tests/smoke-test.js
+    volumes:
+      - ./:/tests
+    environment:
+      - K6_BROWSER_ENABLED=true

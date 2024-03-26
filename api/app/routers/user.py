@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, Depends, HTTPException
+from fastapi import APIRouter, status, Depends, HTTPException, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
@@ -7,6 +7,8 @@ from app.schema.user import UserIn, UserSchema, UserLogin, SessionToken
 from typing_extensions import Annotated
 from app.services.auth import get_current_user
 from app.services import metrics
+from fastapi.responses import JSONResponse
+import logging
 
 router = APIRouter()
 
@@ -24,24 +26,62 @@ async def create_user(payload: UserIn, db: AsyncSession = Depends(get_db)):
 @router.post(
     "/session", status_code=status.HTTP_201_CREATED, response_model=SessionToken
 )
-async def create_session(payload: UserLogin, db: AsyncSession = Depends(get_db)):
+async def create_session(
+    payload: UserLogin, response: Response, db: AsyncSession = Depends(get_db)
+):
 
     token = await Sessions.create(
         db_session=db, username=payload.username, password=payload.password
     )
 
+    response.headers["Access-Control-Allow-Origin"] = "*"
     metrics.user_logged_in_counter.inc()
+    response.set_cookie(
+        key="session_token",
+        value=token["token"]["access_token"],
+        path="/",
+        domain="localhost",
+        secure=True,
+        httponly=True,
+        samesite="None",
+    )
 
-    return token
+    response.set_cookie(
+        key="username",
+        value=payload.username,
+        path="/",
+        domain="localhost",
+        secure=True,
+        httponly=True,
+        samesite="None",
+    )
+    response.set_cookie(
+        key="user_id",
+        value=token["id"],
+        path="/",
+        domain="localhost",
+        secure=True,
+        httponly=True,
+        samesite="None",
+    )
+    return token["token"]
 
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_session(
     session: Annotated[Users, Depends(get_current_user)],
+    response: Response,
+    session_token: str = Cookie(None),
     db: AsyncSession = Depends(get_db),
 ):
+    response.delete_cookie("username")
+    response.delete_cookie("user_id")
+    response.delete_cookie("session_token")
 
     token = await Sessions.delete(
         db_session=db, username=session.user.username, session_id=session.session_id
     )
     metrics.user_logged_out_counter.inc()
+    logging.warn(
+        f"______________________________________________Session Token {session_token}"
+    )

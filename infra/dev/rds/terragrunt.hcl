@@ -38,5 +38,4 @@ dependency "sgs" {
 
 dependency "roles" {
   config_path = "../roles"
-
 }

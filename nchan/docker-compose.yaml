@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  nchan-ws:
+    container_name: nchan
+
+    build: .
+    ports:
+      - "80:80"
+
+    networks:
+      - testing-network
+
+networks:
+  testing-network:
+    external: true
