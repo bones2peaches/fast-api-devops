@@ -132,8 +132,27 @@ const Message: React.FC<MessageProps> = ({
   //     </div>
   //   );
   // };
+
+  const userTooltip = (users: User[], reactionType: "like" | "dislike") => (
+    <div className="absolute bottom-0 mb-6 left-0 invisible group-hover:visible bg-white border border-gray-300 rounded shadow-lg p-2 min-w-max whitespace-nowrap">
+      {users.map((user) => (
+        <div
+          key={user.id}
+          className="hover:bg-gray-100 p-1 rounded cursor-pointer"
+          onClick={() => handleNavigateToUser(user.id)}
+        >
+          {user.username}
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <div className="message mb-4 p-3 bg-gray-100 rounded-lg shadow">
+    <div
+      className={`message mb-4 p-3 bg-gray-100 rounded-lg shadow ${
+        deleted ? "text-gray-400" : "text-gray-800"
+      }`}
+    >
       {isEditing ? (
         <>
           <textarea
@@ -149,66 +168,60 @@ const Message: React.FC<MessageProps> = ({
           </button>
         </>
       ) : (
-        <>
-          <p className="text-gray-800">
-            {text}
-            {editted && <span className="text-gray-500"> (Edited)</span>}
-          </p>
-          <small className="text-gray-500">Sent by: {sentBy.username}</small>
-          <small className="text-gray-500 block">
-            Sent at: {new Date(sentAt).toLocaleTimeString()}
-          </small>
-          <div className="mt-2">
-            <div className="inline-flex items-center mr-2">
-              <button onClick={handleLike} className="mr-1">
-                👍 {likes.length}
-              </button>
-              {/* Hover to show usernames */}
-              <div className="relative group">
-                <span className="cursor-default">👤</span>
-                <div className="absolute hidden group-hover:block z-10 bg-white border border-gray-200 rounded shadow-lg p-2">
-                  {likes.map((like: User) => (
-                    <div
-                      key={like.id}
-                      className="hover:bg-gray-100 p-1 rounded cursor-pointer"
-                      onClick={() => handleNavigateToUser(like.id)}
-                    >
-                      {like.username}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="inline-flex items-center mr-2">
-              <button onClick={handleDislike} className="mr-1">
-                👍 {dislikes.length}
-              </button>
-              {/* Hover to show usernames */}
-              <div className="relative group">
-                <span className="cursor-default">👤</span>
-                <div className="absolute hidden group-hover:block z-10 bg-white border border-gray-200 rounded shadow-lg p-2">
-                  {dislikes.map((like: User) => (
-                    <div
-                      key={like.id}
-                      className="hover:bg-gray-100 p-1 rounded cursor-pointer"
-                      onClick={() => handleNavigateToUser(like.id)}
-                    >
-                      {like.username}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {canEditOrDelete && (
-              <>
-                <button onClick={handleEdit} className="mr-2">
-                  Edit
-                </button>
-                <button onClick={handleDelete}>Delete</button>
-              </>
+        <div className={`${deleted ? "italic" : ""}`}>
+          <p className={`text-sm ${editted && !deleted ? "mb-0" : "mb-2"}`}>
+            {deleted ? "Message deleted" : text}
+            {editted && !deleted && (
+              <span className="text-xs text-gray-400"> (Edited)</span>
             )}
-          </div>
-        </>
+          </p>
+          {!deleted && (
+            <>
+              <small className="text-xs text-gray-500">
+                Sent by: {sentBy.username}
+              </small>
+              <small className="text-xs text-gray-500 block">
+                Sent at: {new Date(sentAt).toLocaleTimeString()}
+              </small>
+              <div className="flex items-center space-x-2 mt-2">
+                <div className="relative group inline-flex items-center">
+                  <button
+                    onClick={handleLike}
+                    className="text-gray-500 hover:text-blue-500"
+                  >
+                    👍 {likes.length}
+                  </button>
+                  {likes.length > 0 && userTooltip(likes, "like")}
+                </div>
+                <div className="relative group inline-flex items-center">
+                  <button
+                    onClick={handleDislike}
+                    className="text-gray-500 hover:text-blue-500"
+                  >
+                    👎 {dislikes.length}
+                  </button>
+                  {dislikes.length > 0 && userTooltip(dislikes, "dislike")}
+                </div>
+                {canEditOrDelete && (
+                  <>
+                    <button
+                      onClick={handleEdit}
+                      className="text-xs text-blue-500 hover:text-blue-600"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={handleDelete}
+                      className="text-xs text-red-500 hover:text-red-600 ml-2"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

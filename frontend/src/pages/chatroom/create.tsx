@@ -8,17 +8,19 @@ type HomePageProps = {
   token: string | null;
   userId: string | null;
   username: string | null;
+  cookies: any;
 };
 
 const CreateChatRoomPage: React.FC<HomePageProps> = ({
   token,
   userId,
   username,
+  cookies,
 }) => {
   if (token === null) {
     // User is not logged in, prompt to login
     return (
-      <Layout username={null} userId={null} token={null}>
+      <Layout username={null} userId={null} token={null} cookies={null}>
         <div className="py-10">
           <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8">
             <h2 className="mb-6 text-center text-3xl font-bold text-gray-900">
@@ -31,7 +33,12 @@ const CreateChatRoomPage: React.FC<HomePageProps> = ({
   } else {
     // User is logged in, show the chat room creation form
     return (
-      <Layout username={username} userId={userId} token={token}>
+      <Layout
+        username={username}
+        userId={userId}
+        token={token}
+        cookies={cookies}
+      >
         <div className="py-10">
           <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8">
             <h2 className="mb-6 text-center text-3xl font-bold text-gray-900">
@@ -55,8 +62,8 @@ export const getServerSideProps: GetServerSideProps<HomePageProps> = async (
   const token = context.req.cookies.session_token || null;
   const userId = context.req.cookies.user_id || null;
   const username = context.req.cookies.username || null;
+  const cookies = context.req.cookies;
 
-  console.log(context.req.headers.cookie);
   // Use the token to fetch data or verify the user session
   // ...
 
@@ -64,7 +71,8 @@ export const getServerSideProps: GetServerSideProps<HomePageProps> = async (
     props: {
       token,
       userId,
-      username, // Pass the token to the component
+      username,
+      cookies, // Pass the token to the component
     },
   };
 };

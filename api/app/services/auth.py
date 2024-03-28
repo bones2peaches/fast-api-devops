@@ -1,4 +1,4 @@
-from fastapi import Depends, Query
+from fastapi import Depends, Query, Cookie
 from app.utils.logging import AppLogger
 
 
@@ -51,6 +51,20 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
 
 
 async def get_event_current_user(token: str = Query(..., alias="access_token")):
+    if token is None:
+        raise AuthFailedHTTPException()
+
+    try:
+        user = decode_token(token)
+    except jwt.DecodeError:
+        raise AuthFailedHTTPException()
+    return user
+
+
+async def get_cookie_user(
+    session_token: str = Cookie(None),
+):
+    token = session_token
     if token is None:
         raise AuthFailedHTTPException()
 

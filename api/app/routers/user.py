@@ -4,11 +4,14 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.models.user import Users, Sessions
 from app.schema.user import UserIn, UserSchema, UserLogin, SessionToken
+from app.schema.chatroom import ChatroomUsers
+from app.schema.nchan import NchanEvent, NchanResponse
 from typing_extensions import Annotated
 from app.services.auth import get_current_user
 from app.services import metrics
 from fastapi.responses import JSONResponse
 import logging
+from app.services.publisher import nchan_client
 
 router = APIRouter()
 
@@ -64,6 +67,24 @@ async def create_session(
         httponly=True,
         samesite="None",
     )
+
+    response.set_cookie(
+        key="expiry",
+        value=token["token"]["expires"],
+        path="/",
+        domain="localhost",
+        secure=True,
+        httponly=True,
+        samesite="None",
+    )
+
+    chatrooms = await token["user"].get_user_chatrooms(db=db)
+    for chatroom in chatrooms:
+        event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
+        event = NchanResponse(event="user", data=event_data)
+        publish = nchan_client.publish_chatroom_users(
+            chatroom_id=chatroom.id, event=event
+        )
     return token["token"]
 
 
@@ -82,6 +103,11 @@ async def delete_session(
         db_session=db, username=session.user.username, session_id=session.session_id
     )
     metrics.user_logged_out_counter.inc()
-    logging.warn(
-        f"______________________________________________Session Token {session_token}"
-    )
+
+    chatrooms = await session.user.get_user_chatrooms(db=db)
+    for chatroom in chatrooms:
+        event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
+        event = NchanResponse(event="user", data=event_data)
+        publish = nchan_client.publish_chatroom_users(
+            chatroom_id=chatroom.id, event=event
+        )

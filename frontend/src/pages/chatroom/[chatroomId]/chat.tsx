@@ -40,6 +40,7 @@ interface ChatRoomProps {
   token: string | null;
   userId: string | null;
   username: string | null;
+  cookies: any;
   chatroomUsers: ChatroomUsers | null;
   chatRoomMessages: ChatRoomMessages | null;
   chatRoomDetails: ChatRoomDetails | null; // Add this line
@@ -49,6 +50,7 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
   token,
   userId,
   username,
+  cookies,
   chatroomUsers,
   chatRoomMessages,
   chatRoomDetails,
@@ -61,7 +63,7 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
     chatRoomMessages?.messages || []
   );
 
-  const wsUrl = `ws://localhost/ws/chatroom/${chatroomId}/user`;
+  const wsUrl = `ws://localhost/ws/chatroom/${chatroomId}`;
   console.log(wsUrl);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
 
@@ -69,10 +71,32 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
     // Initialize WebSocket connection
     const ws = new WebSocket(wsUrl, "ws+meta.nchan");
     ws.onmessage = (event) => {
-      console.log(event);
       const jsonEvent = JSON.parse(event.data.split("\n\n")[1]);
       console.log(jsonEvent);
-      setUsers(jsonEvent);
+      if (jsonEvent.event === "user") {
+        console.log(`USERS : ${jsonEvent.data}`);
+        setUsers(jsonEvent.data);
+      } else if (jsonEvent.event === "message") {
+        setMessages((prevMessages) => [...prevMessages, jsonEvent.data]);
+      } else if (jsonEvent.event === "update") {
+        setMessages((currentMessages) => {
+          const updatedMessage: MessageOut = jsonEvent.data;
+          const index = currentMessages.findIndex(
+            (message) => message.id === updatedMessage.id
+          );
+
+          // If no message is found, just return the current messages without changes
+          if (index === -1) {
+            return currentMessages;
+          }
+
+          // Create a new array with the updated message
+          const updatedMessages = [...currentMessages];
+          updatedMessages[index] = updatedMessage;
+
+          return updatedMessages;
+        });
+      }
     };
 
     setWebsocket(ws);
@@ -81,66 +105,9 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
     return () => ws && ws.close();
   }, [wsUrl]);
 
-  const wsMessageUrl = `ws://localhost/ws/chatroom/${chatroomId}/message`;
-  const [messageWebsocket, setMessageWebsocket] = useState<WebSocket | null>(
-    null
-  );
-  useEffect(() => {
-    // Initialize WebSocket connection
-    const ws = new WebSocket(wsMessageUrl, "ws+meta.nchan");
-
-    ws.onmessage = (event) => {
-      console.log("New message event received:", event);
-      const newMessage: MessageOut = JSON.parse(event.data.split("\n\n")[1]);
-      console.log("Parsed new message:", newMessage);
-
-      // Update the messages state to include the new message
-      setMessages((prevMessages) => [...prevMessages, newMessage]);
-    };
-
-    setMessageWebsocket(ws);
-
-    // Clean up on component unmount
-    return () => ws.close();
-  }, [wsMessageUrl]);
-
-  const wsUpdateUrl = `ws://localhost/ws/chatroom/${chatroomId}/update`;
-  const [updateWebsocket, setUpdateWebsocket] = useState<WebSocket | null>(
-    null
-  );
-  useEffect(() => {
-    const ws = new WebSocket(wsUpdateUrl, "ws+meta.nchan");
-
-    ws.onmessage = (event) => {
-      const updatedMessage: MessageOut = JSON.parse(
-        event.data.split("\n\n")[1]
-      );
-      console.log("Update event received:", updatedMessage);
-      setMessages((currentMessages) => {
-        // Find the index of the message that needs to be updated
-        const index = currentMessages.findIndex(
-          (message) => message.id === updatedMessage.id
-        );
-
-        // If no message is found, just return the current messages without changes
-        if (index === -1) {
-          return currentMessages;
-        }
-
-        // Create a new array with the updated message
-        const updatedMessages = [...currentMessages];
-        updatedMessages[index] = updatedMessage;
-
-        return updatedMessages;
-      });
-    };
-
-    return () => ws.close();
-  }, [wsUpdateUrl]);
-
   if (!token || !username) {
     return (
-      <Layout username={null} userId={null} token={null}>
+      <Layout username={null} userId={null} token={null} cookies={cookies}>
         <div className="py-10">
           <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8">
             <h2 className="mb-6 text-center text-3xl font-bold text-gray-900">
@@ -154,7 +121,12 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
 
   if (!chatRoomDetails) {
     return (
-      <Layout username={username} userId={userId} token={token}>
+      <Layout
+        username={username}
+        userId={userId}
+        token={token}
+        cookies={cookies}
+      >
         <div className="py-10">
           <div className="max-w-md mx-auto bg-white shadow-lg rounded-lg p-8">
             <h2 className="mb-6 text-center text-3xl font-bold text-gray-900">
@@ -166,7 +138,12 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
     );
   } else {
     return (
-      <Layout username={username} userId={userId} token={token}>
+      <Layout
+        username={username}
+        userId={userId}
+        token={token}
+        cookies={cookies}
+      >
         <div className="flex flex-col md:flex-row justify-between space-x-0 md:space-x-4 py-10">
           <div className="md:w-1/4 p-8">
             <h1 className="text-3xl font-bold mb-2">{chatRoomDetails.name}</h1>
@@ -260,6 +237,7 @@ export const getServerSideProps: GetServerSideProps<ChatRoomProps> = async (
   const token = context.req.cookies.session_token || null;
   const userId = context.req.cookies.user_id || null;
   const username = context.req.cookies.username || null;
+  const cookies = context.req.cookies;
 
   const apiClient = new ApiClient("http", "localhost", 5000);
   const chatroomId = context.params?.chatroomId;
@@ -276,6 +254,7 @@ export const getServerSideProps: GetServerSideProps<ChatRoomProps> = async (
       chatroomUsers,
       chatRoomMessages,
       chatRoomDetails,
+      cookies,
     },
   };
 };

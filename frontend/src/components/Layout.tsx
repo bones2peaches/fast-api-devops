@@ -9,6 +9,7 @@ interface LayoutProps {
   username: string | null;
   userId: string | null;
   token: string | null;
+  cookies: any;
 }
 
 const Layout: React.FC<LayoutProps> = ({
@@ -16,13 +17,45 @@ const Layout: React.FC<LayoutProps> = ({
   username,
   token,
   userId,
+  cookies,
 }) => {
   const router = useRouter();
+
+  const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+
+  useEffect(() => {
+    const checkTokenExpiry = () => {
+      // Ensure cookies object is available and expiry is defined
+      if (cookies && cookies.expiry) {
+        const expiryDate = new Date(cookies.expiry);
+        expiryDate.setHours(expiryDate.getHours() - 4);
+        const currentDate = new Date();
+        const timeLeft = expiryDate.getTime() - currentDate.getTime();
+
+        // If there's less than a minute left, show the expiry warning
+        if (timeLeft < 60000 && timeLeft > 0) {
+          setShowExpiryWarning(true);
+          setToken(null);
+          setUsername(null);
+          setUserId(null);
+        } else {
+          setShowExpiryWarning(false);
+        }
+      }
+    };
+
+    // Check the token expiry every second
+    const intervalId = setInterval(checkTokenExpiry, 1000);
+
+    // Clean up the interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []);
 
   const [_token, setToken] = useState<any>(token);
   const [loggedIn, setLoggedIn] = useState<boolean>(!!token);
   const [_username, setUsername] = useState<any>(username);
   const [_userId, setUserId] = useState<any>(userId);
+
   const logout = async () => {
     if (token) {
       try {
@@ -33,6 +66,7 @@ const Layout: React.FC<LayoutProps> = ({
           setToken(null);
           setUsername(null);
           setUserId(null);
+
           router.push("/");
         }
       } catch (error) {}
@@ -45,6 +79,15 @@ const Layout: React.FC<LayoutProps> = ({
   };
   return (
     <div className="flex flex-col min-h-screen">
+      {/* Your session expiry warning message */}
+      {showExpiryWarning && (
+        <div className="fixed top-0 left-0 right-0 bg-red-600 text-white text-center py-10 z-100">
+          Your session is about to expire. Please log in again.
+          <Link href="/login">
+            <p className="hover:text-blue-300">Click Here to Login</p>
+          </Link>
+        </div>
+      )}
       <header className="bg-blue-500 text-white p-4">
         <div className="container mx-auto flex justify-between items-center">
           <h1 className="text-xl font-semibold">My Application</h1>

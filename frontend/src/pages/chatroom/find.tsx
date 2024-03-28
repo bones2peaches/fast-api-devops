@@ -10,6 +10,7 @@ interface ChatRoom {
   name: string;
   category: string;
   created_at: string;
+  joined: boolean;
   created_by: {
     username: string;
     id: string;
@@ -24,6 +25,7 @@ interface ChatRoomsPageProps {
   token: string | null;
   userId: string | null;
   username: string | null;
+  cookies: any;
 }
 
 const ChatRoomsPage: React.FC<ChatRoomsPageProps> = ({
@@ -33,38 +35,27 @@ const ChatRoomsPage: React.FC<ChatRoomsPageProps> = ({
   token,
   page,
   totalPages,
+  cookies,
 }) => {
   const router = useRouter();
   const changePage = (newPage: number) => {
     router.push(`?page=${newPage}`);
   };
 
-  const joinChatRoom = async (roomId: string) => {
+  const joinChatRoom = async (roomId: string, joined: boolean) => {
     console.log("Joining chat room:", roomId);
 
     // Initialize your API client
     const apiClient = new ApiClient("http", "localhost", 80);
 
-    try {
-      // Attempt to join the chat room
+    if (joined === false) {
       const joinRoom = await apiClient.joinChatroom(token, roomId);
-      console.log(joinRoom);
-      // Check if the response is not null
-      if (joinRoom) {
-        // If joinRoom is not null, navigate to the chat room
-        router.push(`/chatroom/${roomId}/chat`);
-      } else {
-        // If joinRoom is null, log an error or show a message to the user
-        console.log("Failed to join chat room or chat room is null.");
-      }
-    } catch (error) {
-      // If there's an error in the API call, handle it here
-      console.error("Error joining chat room:", error);
     }
+    router.push(`/chatroom/${roomId}/chat`);
   };
 
   return (
-    <Layout username={username} userId={userId} token={token}>
+    <Layout username={username} userId={userId} token={token} cookies={cookies}>
       <div className="container mx-auto p-4">
         <h1 className="text-2xl font-bold mb-4">Chat Rooms</h1>
         {chatRooms.map((room) => (
@@ -72,8 +63,9 @@ const ChatRoomsPage: React.FC<ChatRoomsPageProps> = ({
             <h2 className="text-xl font-semibold">{room.name}</h2>
             <p>Category: {room.category}</p>
             <p>Created by: {room.created_by.username}</p>
+            <p>Joined: {room.joined ? "Yes" : "No"}</p>
             <button
-              onClick={() => joinChatRoom(room.id)}
+              onClick={() => joinChatRoom(room.id, room.joined)}
               className="mt-2 inline-block bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
             >
               Join
@@ -116,8 +108,10 @@ export const getServerSideProps: GetServerSideProps<
   const token = context.req.cookies.session_token || null;
   const userId = context.req.cookies.user_id || null;
   const username = context.req.cookies.username || null;
+  const cookies = context.req.cookies;
   const apiClient = new ApiClient("http", "localhost", 5000);
   const chatRooms = await apiClient.getChatrooms(token, page, perPage);
+  console.log(chatRooms);
 
   return {
     props: {
@@ -126,7 +120,8 @@ export const getServerSideProps: GetServerSideProps<
       totalPages: chatRooms.total_pages,
       token,
       userId,
-      username, // Assuming the API returns the total number of pages
+      username,
+      cookies, // Assuming the API returns the total number of pages
     },
   };
 };

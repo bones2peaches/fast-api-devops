@@ -3,7 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
 from app.models.user import Chatrooms, Users
-from app.schema.chatroom import ChatroomIn, PaginatedChatroom, ChatroomOut, ChatroomUser
+from app.schema.chatroom import (
+    ChatroomIn,
+    PaginatedChatroom,
+    ChatroomOut,
+    ChatroomUsers,
+)
 from typing_extensions import Annotated
 from app.services.auth import get_current_user
 from app.services import metrics
@@ -45,13 +50,31 @@ async def get_chatroom(
         return ChatroomOut._return(chatroom=chatroom)
 
 
+@router.get(
+    "/{chatroom_id}/users", status_code=status.HTTP_200_OK, response_model=ChatroomUsers
+)
+async def _get_chatroom_users(
+    chatroom_id: str | uuid.UUID,
+    session: Annotated[Users, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+
+    chatroom = await Chatrooms.find(db_session=db, name=chatroom_id, id=True)
+    if chatroom is None:
+        raise NotFoundHTTPException(msg=f"chatroom of id {chatroom_id} not found")
+    else:
+        data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
+        return data
+
+
 @router.get("s", status_code=status.HTTP_200_OK, response_model=PaginatedChatroom)
 async def list_chatrooms(
+    session: Annotated[Users, Depends(get_current_user)],
     page: int = 1,
     per_page: int = 5,
     db: AsyncSession = Depends(get_db),
 ):
 
-    return await PaginatedChatroom.query(db_session=db, page=page, per_page=per_page)
-
-
+    return await PaginatedChatroom.query(
+        db_session=db, page=page, per_page=per_page, user=session.user
+    )

@@ -16,12 +16,21 @@ from sqlalchemy import (
     insert,
     delete,
     func,
+    exists,
 )
+
 import math
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from sqlalchemy.orm import mapped_column, Mapped, relationship
+from sqlalchemy.orm import (
+    mapped_column,
+    Mapped,
+    relationship,
+    selectinload,
+    joinedload,
+    raiseload,
+)
 from datetime import datetime, timedelta
 from app.models.base import Base
 from app.exceptions import BadRequestHTTPException, NotFoundHTTPException
@@ -66,6 +75,29 @@ class Users(Base):
         secondary=user_chatroom_table, back_populates="users"
     )
     online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    async def get_user_chatrooms(self, db: AsyncSession) -> List["Chatrooms"]:
+        """
+        Asynchronously get a list of chatrooms that the given user is a part of.
+
+        :param user_id: UUID of the user to check.
+        :param db: SQLAlchemy AsyncSession.
+        :return: List of Chatrooms the user is a part of.
+        """
+        # Create a query that selects chatrooms joined by the given user_id
+        stmt = (
+            select(Chatrooms)
+            .options(raiseload("*"))
+            .join(
+                user_chatroom_table, Chatrooms.id == user_chatroom_table.c.chatroom_id
+            )
+            .where(user_chatroom_table.c.user_id == self.id)
+        )
+
+        result = await db.execute(stmt)
+        chatrooms = result.scalars().all()
+
+        return chatrooms
 
     @classmethod
     async def find(cls, db_session: AsyncSession, username: str):
@@ -173,6 +205,7 @@ class Sessions(Base):
                 return {
                     "token": _user.sign_token(session_id=str(session.id)),
                     "id": str(_user.id),
+                    "user": _user,
                 }
             else:
                 raise BadRequestHTTPException(msg="incorrect username or password")

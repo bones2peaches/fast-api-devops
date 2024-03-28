@@ -6,6 +6,7 @@ from pydantic import (
     AliasChoices,
     ConfigDict,
 )
+import logging
 from passlib.context import CryptContext
 from datetime import datetime
 from app.models.user import Chatrooms, Users
@@ -14,7 +15,7 @@ import uuid
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import Mapped, selectinload, joinedload, raiseload
 from sqlalchemy import func
 import math
 from enum import Enum
@@ -81,9 +82,10 @@ class ChatroomOut(BaseModel):
     category: str = Field(...)
     created_at: datetime = Field(...)
     created_by: ChatroomUser = Field(...)
+    joined: Optional[bool] = None
 
     @classmethod
-    def _return(cls, chatroom: Chatrooms):
+    def _return(cls, chatroom: Chatrooms, joined: bool = True):
         return cls(
             name=chatroom.name,
             category=chatroom.category,
@@ -94,6 +96,7 @@ class ChatroomOut(BaseModel):
                 online=chatroom.created_by.online,
             ),
             id=chatroom.id,
+            joined=joined,
         )
 
 
@@ -108,10 +111,15 @@ class PaginatedChatroom(BaseModel):
     async def query(
         cls,
         db_session: AsyncSession,
+        user: Users,
         page: int,
         per_page: int,
     ):
-        base_query = select(Chatrooms).order_by(Chatrooms.created_at.desc())
+        base_query = (
+            select(Chatrooms)
+            .options(selectinload(Chatrooms.created_by))
+            .order_by(Chatrooms.created_at.desc())
+        )
 
         count_stmt = select(func.count()).select_from(base_query.subquery())
         total_items_result = await db_session.execute(count_stmt)
@@ -126,9 +134,17 @@ class PaginatedChatroom(BaseModel):
         chatrooms_db = users_result.scalars().all()
 
         items = []
+        user_chatrooms = await user.get_user_chatrooms(db=db_session)
+        chatroom_ids = [str(item.id) for item in user_chatrooms]
 
         for chatroom in chatrooms_db:
-            items.append(ChatroomOut._return(chatroom=chatroom))
+
+            if str(chatroom.id) in chatroom_ids:
+                joined = True
+            else:
+                joined = False
+
+            items.append(ChatroomOut._return(chatroom=chatroom, joined=joined))
 
         return cls(
             current_page=page,

@@ -160,6 +160,7 @@ export class ApiClient {
       return null;
     } else {
       const data = response.json();
+
       return data;
     }
   }
@@ -199,6 +200,7 @@ export class ApiClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ text: messageText }), // Convert the message object to a JSON string
     };
@@ -237,6 +239,7 @@ export class ApiClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         text: messageText,
@@ -280,6 +283,7 @@ export class ApiClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         text: null,
@@ -322,6 +326,7 @@ export class ApiClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         text: null,
