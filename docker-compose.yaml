@@ -87,6 +87,7 @@ services:
       - "5000:5000"
     depends_on:
       - postgres
+      - redis-cluster-creator
     volumes:
       - ./api:/home/code
     environment:
@@ -112,11 +113,104 @@ services:
       - "80:80"
     depends_on:
       - fast-api
+      - redis-cluster-creator
     environment:
       - NCHAN_USERNAME=${NCHAN_USERNAME}
       - NCHAN_PASSWORD=${NCHAN_PASSWORD}
     networks:
       - testing-network
+  redis-node-1:
+    container_name: r-1
+    image: redis:latest
+    ports:
+      - 7000:7000
+      - 17000:17000
+
+    networks:
+      - testing-network
+    hostname: redis-node-1
+    volumes:
+      - ./services/redis/7000:/redis
+    command: redis-server /redis/redis.conf
+  redis-node-2:
+    container_name: r-2
+    image: redis:latest
+    ports:
+      - 7001:7001
+      - 17001:17001
+    networks:
+      - testing-network
+    hostname: redis-node-2
+    volumes:
+      - ./services/redis/7001:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-3:
+    container_name: r-3
+    image: redis:latest
+    ports:
+      - 7002:7002
+      - 17002:17002
+    networks:
+      - testing-network
+    hostname: redis-node-3
+    volumes:
+      - ./services/redis/7002:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-4:
+    container_name: r-4
+    image: redis:latest
+    ports:
+      - 7003:7003
+      - 17003:17003
+    networks:
+      - testing-network
+    hostname: redis-node-4
+    volumes:
+      - ./services/redis/7003:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-5:
+    container_name: r-5
+    image: redis:latest
+    ports:
+      - 7004:7004
+      - 17004:17004
+    networks:
+      - testing-network
+    hostname: redis-node-5
+    volumes:
+      - ./services/redis/7004:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-6:
+    container_name: r-6
+    image: redis:latest
+    ports:
+      - 7005:7005
+      - 17005:17005
+    networks:
+      - testing-network
+    hostname: redis-node-6
+    volumes:
+      - ./services/redis/7005:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-cluster-creator:
+    image: redis:latest
+    ports:
+      - 6999:6999
+    networks:
+      - testing-network
+    command: redis-cli -p 7000 --cluster create redis-node-1:7000 redis-node-2:7001 redis-node-3:7002 redis-node-4:7003 redis-node-5:7004 redis-node-6:7005 --cluster-replicas 1 --cluster-yes
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
 
 networks:
   testing-network:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, status, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
+from app.redis_cache import get_redis
 import pytest
 
 router = APIRouter()
@@ -24,5 +25,18 @@ async def postgres_healthcheck(db: AsyncSession = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database connection error",
+        )
+    return resp
+
+
+@router.get("/redis", status_code=status.HTTP_200_OK)
+async def redis_healthcheck(redis=Depends(get_redis)):
+    try:
+        resp = await redis.ping()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
         )
     return resp

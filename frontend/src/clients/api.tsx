@@ -165,6 +165,29 @@ export class ApiClient {
     }
   }
 
+  async getChatroomUsers(
+    token: string | null,
+    chatroom_id: string | null
+  ): Promise<any> {
+    const url = `${this.baseUrl}/api/chatroom/${chatroom_id}/user`;
+    const requestOptions: RequestInit = {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    };
+
+    const response = await fetch(url, requestOptions);
+    if (response.status == 404) {
+      return null;
+    } else {
+      const data = response.json();
+
+      return data;
+    }
+  }
+
   async joinChatroom(
     token: string | null,
     chatroomId: string | any

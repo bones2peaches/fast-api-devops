@@ -1,8 +1,4 @@
-version: '3'
-
-networks:
-  redis-cluster-compose:
-    driver: bridge
+version: "3"
 
 services:
   redis-node-1:
@@ -11,8 +7,9 @@ services:
     ports:
       - 7000:7000
       - 17000:17000
+
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-1
     volumes:
       - ./7000:/redis
@@ -24,70 +21,70 @@ services:
       - 7001:7001
       - 17001:17001
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-2
     volumes:
       - ./7001:/redis
     command: redis-server /redis/redis.conf
 
   redis-node-3:
-    container_name : r-3
+    container_name: r-3
     image: redis:latest
     ports:
       - 7002:7002
       - 17002:17002
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-3
     volumes:
       - ./7002:/redis
     command: redis-server /redis/redis.conf
 
   redis-node-4:
-    container_name : r-4
+    container_name: r-4
     image: redis:latest
     ports:
       - 7003:7003
       - 17003:17003
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-4
     volumes:
       - ./7003:/redis
     command: redis-server /redis/redis.conf
 
   redis-node-5:
-    container_name : r-5
+    container_name: r-5
     image: redis:latest
     ports:
       - 7004:7004
       - 17004:17004
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-5
     volumes:
       - ./7004:/redis
     command: redis-server /redis/redis.conf
-  
+
   redis-node-6:
-    container_name : r-6
+    container_name: r-6
     image: redis:latest
     ports:
       - 7005:7005
       - 17005:17005
     networks:
-      - redis-cluster-compose
+      - testing-network
     hostname: redis-node-6
     volumes:
       - ./7005:/redis
     command: redis-server /redis/redis.conf
-  
+
   redis-cluster-creator:
     image: redis:latest
     ports:
       - 6999:6999
     networks:
-      - redis-cluster-compose
+      - testing-network
     command: redis-cli -p 7000 --cluster create redis-node-1:7000 redis-node-2:7001 redis-node-3:7002 redis-node-4:7003 redis-node-5:7004 redis-node-6:7005 --cluster-replicas 1 --cluster-yes
     depends_on:
       - redis-node-1
@@ -97,8 +94,6 @@ services:
       - redis-node-5
       - redis-node-6
 
-  python:
-    image : python:3
-    command : tail -f /dev/null
-    
- 
+networks:
+  testing-network:
+    external: true

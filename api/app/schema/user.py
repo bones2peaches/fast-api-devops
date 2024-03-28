@@ -52,3 +52,17 @@ class SessionToken(BaseModel):
 class UserSchema(BaseModel):
     username: str
     id: uuid.UUID
+
+
+class RecentChatroom(BaseModel):
+    id: uuid.UUID = Field(...)
+    name: str = Field(...)
+    category: str = Field(...)
+    message_id: str = Field(...)
+    message_text: str = Field(...)
+    username: str = Field(...)
+    user_id: str = Field(...)
+
+
+class ViewUser(BaseModel):
+    id: uuid.UUID = Field(...)
