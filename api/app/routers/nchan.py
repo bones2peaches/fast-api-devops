@@ -2,7 +2,7 @@ from fastapi import APIRouter, status, Depends, HTTPException, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
-from app.models.user import Chatrooms, Users, Messages, MessageReactions
+from app.models.user import Chatrooms, Users, Messages, MessageReactions, Notifications
 from app.schema.chatroom import (
     ChatroomIn,
     ChatroomOut,
@@ -11,7 +11,11 @@ from app.schema.chatroom import (
     MessageIn,
     ChatroomUsers,
     UpdateMessage,
+    CountUpdate,
 )
+
+from app.redis_cache import get_redis
+from redis.asyncio.cluster import RedisCluster
 
 from app.schema.nchan import NchanResponse
 from typing_extensions import Annotated
@@ -20,7 +24,9 @@ from app.services import metrics
 import uuid
 from datetime import datetime
 from app.exceptions import BadRequestHTTPException
+from app.schema.notifications import NotificationMessage, Notification, NotificationType
 import logging
+from app.services.publisher import nchan_client
 
 router = APIRouter()
 
@@ -28,6 +34,32 @@ router = APIRouter()
 @router.get("/subscribe", status_code=status.HTTP_204_NO_CONTENT)
 async def nchan_subscribe():
     metrics.ws_connection_counter.inc()
+
+
+@router.get("/subscribe/notifications", status_code=status.HTTP_204_NO_CONTENT)
+async def nchan_user_subscribe(
+    request: Request,
+    session: Annotated[Users, Depends(get_cookie_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    metrics.ws_connection_counter.inc()
+    #### delete the existing messages
+
+    for header, value in request.headers.items():
+        logging.warn(f"Header: {header} Value: {value}")
+
+    # Log cookies
+    for cookie, value in request.cookies.items():
+        logging.warn(f"Cookie: {cookie} Value: {value}")
+
+    # Log query parameters
+    for arg, value in request.query_params.items():
+        logging.warn(f"Query: {arg} Value: {value}")
+
+    nchan_client.delete_notification_channel(channel_id=session.user.id)
+    data = await Notifications.query(
+        db_session=db, page=1, per_page=50, user=session.user
+    )
 
 
 @router.get("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)
@@ -41,7 +73,6 @@ async def nchan_auth(
     session: Annotated[Users, Depends(get_cookie_user)],
 ):
 
-    logging.warn(f"COOKIES : {request.cookies}")
     return ""
 
 
@@ -58,9 +89,11 @@ async def nchan_user_join(
 
     chatroom = await Chatrooms.find(db_session=db, id=True, name=chatroom_id)
     await chatroom.update_user(session=db, user_id=session.user.id)
+    users = await chatroom.user_count(db=db)
+    users["chatroom_id"] = str(chatroom.id)
+    event = NchanResponse(event="count_update", data={"chatrooms": [users]})
 
-    data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
-    return NchanResponse(event="user", data=data)
+    return event
 
 
 @router.post(
@@ -70,14 +103,48 @@ async def nchan_user_join(
 )
 async def nchan_send_message(
     chatroom_id: str | uuid.UUID,
+    request: Request,
     payload: MessageIn,
     session: Annotated[Users, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
 
     chatroom = await Chatrooms.find(db_session=db, id=True, name=chatroom_id)
+
     message = await chatroom.add_message(
         session=db, text=payload.text, user_id=session.user.id
+    )
+
+    notification_message = NotificationMessage(
+        type="message",
+        user_id=session.user.id,
+        username=session.user.username,
+        chatroom_id=chatroom_id,
+        chatroom_name=chatroom.name,
+    )
+
+    notification = Notification(id=uuid.uuid4(), event=notification_message)
+    user_id_string = await chatroom.get_online_and_offline_user(db=db)
+    publish = nchan_client.notify_chatroom_users(
+        notification=notification, user_ids=user_id_string["online"]
+    )
+
+    logging.warn(f"USERS ID STRING: {user_id_string['online']}")
+
+    db_notif = await Notifications.create(
+        db=db,
+        id=notification.id,
+        user_id=notification.event.user_id,
+        created_at=notification.created_at,
+        type=notification.event.type,
+        data=dict(
+            chatroom_id=notification.event.chatroom_id,
+            text=notification.event.event_text(),
+        ),
+    )
+
+    await db_notif.associate_users_with_notification(
+        session=db, users=user_id_string["users"]
     )
 
     data = MessageOut(

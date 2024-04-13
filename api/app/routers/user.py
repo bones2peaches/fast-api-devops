@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.user import Users, Sessions
 from app.schema.user import UserIn, UserSchema, UserLogin, SessionToken
 from app.schema.chatroom import ChatroomUsers
-from app.schema.nchan import NchanEvent, NchanResponse
+from app.schema.nchan import NchanEvent, NchanResponse, CountUpdate
 from typing_extensions import Annotated
 from app.services.auth import get_current_user
 from app.services import metrics
@@ -78,13 +78,17 @@ async def create_session(
         samesite="None",
     )
 
-    chatrooms = await token["user"].get_user_chatrooms(db=db)
-    for chatroom in chatrooms:
-        event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
-        event = NchanResponse(event="user", data=event_data)
-        publish = nchan_client.publish_chatroom_users(
-            chatroom_id=chatroom.id, event=event
-        )
+    chatrooms = await token["user"].get_chatrooms_and_user_counts(db=db)
+
+    event = NchanResponse(event="count_update", data={"chatrooms": chatrooms})
+    publish = nchan_client.count_update(event=event)
+
+    # for chatroom in chatrooms:
+    #     event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
+    #     event = NchanResponse(event="user", data=event_data)
+    #     publish = nchan_client.publish_chatroom_users(
+    #         chatroom_id=chatroom.id, event=event
+    #     )
     return token["token"]
 
 
@@ -104,10 +108,13 @@ async def delete_session(
     )
     metrics.user_logged_out_counter.inc()
 
-    chatrooms = await session.user.get_user_chatrooms(db=db)
-    for chatroom in chatrooms:
-        event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
-        event = NchanResponse(event="user", data=event_data)
-        publish = nchan_client.publish_chatroom_users(
-            chatroom_id=chatroom.id, event=event
-        )
+    chatrooms = await session.user.get_chatrooms_and_user_counts(db=db)
+    # for chatroom in chatrooms:
+    #     event_data = await ChatroomUsers.query(chatroom_id=chatroom.id, session=db)
+    #     event = NchanResponse(event="user", data=event_data)
+    #     publish = nchan_client.publish_chatroom_users(
+    #         chatroom_id=chatroom.id, event=event
+    #     )
+
+    event = NchanResponse(event="count_update", data={"chatrooms": chatrooms})
+    publish = nchan_client.count_update(event=event)

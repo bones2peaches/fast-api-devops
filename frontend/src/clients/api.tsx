@@ -167,9 +167,11 @@ export class ApiClient {
 
   async getChatroomUsers(
     token: string | null,
-    chatroom_id: string | null
+    chatroom_id: any | null,
+    page: number | any,
+    per_page: number
   ): Promise<any> {
-    const url = `${this.baseUrl}/api/chatroom/${chatroom_id}/user`;
+    const url = `${this.baseUrl}/api/chatroom/${chatroom_id}/users?page=${page}&per_page=${per_page}`;
     const requestOptions: RequestInit = {
       method: "GET",
       headers: {
@@ -216,7 +218,7 @@ export class ApiClient {
     messageText: string
   ): Promise<any> {
     // Construct the URL for the API endpoint to send a message to a specific chatroom
-    const url = `${this.baseUrl}/api/chatroom/${chatroomId}/message?access_token=${token}`;
+    const url = `${this.baseUrl}/api/chatroom/${chatroomId}/message`;
 
     // Prepare the request options, including the method, headers, and body with the message text
     const requestOptions: RequestInit = {
@@ -376,6 +378,66 @@ export class ApiClient {
     } catch (error) {
       console.error("Error sending message:", error);
       throw error; // Re-throw to be handled by the caller
+    }
+  }
+
+  async updateNotification(
+    token: string | null,
+    notificationId: string | null
+  ): Promise<any> {
+    // Construct the URL for the API endpoint to send a message to a specific chatroom
+    const url = `${this.baseUrl}/api/notifications/${notificationId}`;
+
+    // Prepare the request options, including the method, headers, and body with the message text
+    const requestOptions: RequestInit = {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      }, // Convert the message object to a JSON string
+    };
+
+    try {
+      const response = await fetch(url, requestOptions);
+
+      if ([204].includes(response.status)) {
+        // Parse the JSON response body
+        return response; // Return the parsed data
+      } else if (response.status == 403) {
+        throw new Error(
+          "Access forbidden. Please check your authentication token."
+        );
+      } else {
+        const errorText = await response.text(); // Extract text for error details
+        throw new Error(`Failed to send message: ${errorText}`);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      throw error; // Re-throw to be handled by the caller
+    }
+  }
+
+  async getNotifications(
+    token: string | null,
+    page: number | any,
+    per_page: number
+  ): Promise<any> {
+    const url = `${this.baseUrl}/api/notifications?page=${page}&per_page=${per_page}`;
+    const requestOptions: RequestInit = {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    };
+
+    const response = await fetch(url, requestOptions);
+    if (response.status == 404) {
+      return null;
+    } else {
+      const data = response.json();
+
+      return data;
     }
   }
 }

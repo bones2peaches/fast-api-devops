@@ -9,8 +9,9 @@ from pydantic import (
 import logging
 from passlib.context import CryptContext
 from datetime import datetime
-from app.models.user import Chatrooms, Users
+from app.models.user import Chatrooms, Users, user_chatroom_table
 from app.exceptions import BadRequestHTTPException
+
 import uuid
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +77,12 @@ class ChatRoomMessages(BaseModel):
     messages: List[MessageOut] = Field(...)
 
 
+class ChatroomCount(BaseModel):
+    online: int = Field(...)
+    offline: int = Field(...)
+    chatroom_id: uuid.UUID | str = Field(...)
+
+
 class ChatroomOut(BaseModel):
     id: uuid.UUID = Field(...)
     name: str = Field(...)
@@ -85,7 +92,9 @@ class ChatroomOut(BaseModel):
     joined: Optional[bool] = None
 
     @classmethod
-    def _return(cls, chatroom: Chatrooms, joined: bool = True):
+    def _return(
+        cls, chatroom: Chatrooms, joined: bool = True, count: ChatroomCount = None
+    ):
         return cls(
             name=chatroom.name,
             category=chatroom.category,
@@ -135,7 +144,7 @@ class PaginatedChatroom(BaseModel):
 
         items = []
         user_chatrooms = await user.get_user_chatrooms(db=db_session)
-        chatroom_ids = [str(item.id) for item in user_chatrooms]
+        chatroom_ids = [str(item) for item in user_chatrooms]
 
         for chatroom in chatrooms_db:
 
@@ -184,3 +193,53 @@ class UpdateMessage(BaseModel):
             )
         else:
             return values
+
+
+class CountUpdate(BaseModel):
+    chatrooms: list[ChatroomCount]
+
+
+class PaginatedUserCount(BaseModel):
+    current_page: int
+    total_pages: int
+    total_items: int
+    per_page: int
+    items: List[ChatroomUser]
+
+    @classmethod
+    async def query(
+        cls,
+        db_session: AsyncSession,
+        chatroom_id: str,  # Assuming self.id is available as chatroom_id
+        page: int,
+        per_page: int,
+    ):
+        base_query = (
+            select(Users.id, Users.username, Users.online)
+            .join(user_chatroom_table, Users.id == user_chatroom_table.c.user_id)
+            .where(user_chatroom_table.c.chatroom_id == chatroom_id)
+        )
+
+        count_stmt = select(func.count()).select_from(base_query.subquery())
+        total_items_result = await db_session.execute(count_stmt)
+        total_items = total_items_result.scalar_one()
+
+        total_pages = math.ceil(total_items / per_page)
+        offset = (page - 1) * per_page
+
+        # Apply pagination to the base query
+        final_stmt = base_query.offset(offset).limit(per_page)
+        users_result = await db_session.execute(final_stmt)
+        users = (
+            users_result.mappings().all()
+        )  # Assuming ChatroomUser can be directly constructed from query results
+
+        items = [ChatroomUser(**user) for user in users]
+
+        return cls(
+            current_page=page,
+            total_pages=total_pages,
+            total_items=total_items,
+            per_page=per_page,
+            items=items,
+        )

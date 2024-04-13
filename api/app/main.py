@@ -29,8 +29,10 @@ from app.routers.health import router as health_router
 from app.routers.user import router as user_router
 from app.routers.chatroom import router as chatroom_router
 from app.routers.nchan import router as nchan_router
+from app.routers.notifications import router as notifications_router
 
 app.include_router(health_router, prefix=f"/api/health")
 app.include_router(user_router, prefix=f"/api/user")
 app.include_router(chatroom_router, prefix=f"/api/chatroom")
 app.include_router(nchan_router, prefix=f"/api/nchan")
+app.include_router(notifications_router, prefix=f"/api/notifications")

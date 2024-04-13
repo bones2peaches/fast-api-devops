@@ -8,6 +8,12 @@ import SendMessageForm from "../../../components/SendMessageForum";
 import { User } from "../../../types/user";
 
 import Message from "@/components/Message";
+import { join } from "path";
+
+interface OnlineCount {
+  online: number;
+  offline: number;
+}
 
 interface ChatRoomDetails {
   id: string;
@@ -15,6 +21,7 @@ interface ChatRoomDetails {
   category: string;
   created_at: Date;
   created_by: User;
+  count: OnlineCount;
 }
 
 interface MessageOut {
@@ -32,18 +39,15 @@ interface ChatRoomMessages {
   messages: MessageOut[];
 }
 
-interface ChatroomUsers {
-  users: User[];
-}
-
 interface ChatRoomProps {
   token: string | null;
   userId: string | null;
   username: string | null;
   cookies: any;
-  chatroomUsers: ChatroomUsers | null;
+  chatroomUsers: any | null;
   chatRoomMessages: ChatRoomMessages | null;
-  chatRoomDetails: ChatRoomDetails | null; // Add this line
+  chatRoomDetails: ChatRoomDetails | null;
+  currentTime: string; // Add this line
 }
 
 const ChatRoomComponent: React.FC<ChatRoomProps> = ({
@@ -54,28 +58,101 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
   chatroomUsers,
   chatRoomMessages,
   chatRoomDetails,
+  currentTime,
 }) => {
   const router = useRouter();
+
   const { chatroomId } = router.query;
   const [users, setUsers] = useState(chatroomUsers);
-
+  const [online, setOnline] = useState(0);
+  const [showingUsers, setShowingUsers] = useState<boolean>(false);
+  const [offline, setOffline] = useState(0);
   const [messages, setMessages] = useState<MessageOut[]>(
     chatRoomMessages?.messages || []
   );
 
-  const wsUrl = `ws://localhost/ws/chatroom/${chatroomId}`;
-  console.log(wsUrl);
-  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+  const showUserButtonText = showingUsers ? "Hide Users" : "Show Users";
 
+  const [userPage, setUserPage] = useState<number>(1);
+  const [joinTime, setJoinTime] = useState<Date>(new Date(currentTime));
+  const [totalPages, setTotalPages] = useState<number>(0);
+  const apiClient = new ApiClient("http", "localhost", 5000);
+
+  const handleNextPage = () => {
+    if (userPage < totalPages) {
+      setUserPage(userPage + 1);
+    }
+  };
+
+  const handlePreviousPage = () => {
+    if (userPage > 1) {
+      setUserPage(userPage - 1);
+    }
+  };
+
+  const loadUsers = async (page: number) => {
+    try {
+      const response = await apiClient.getChatroomUsers(
+        token,
+        chatroomId,
+        page,
+        5 // Assuming this is the per_page value
+      );
+      setUsers(response.items);
+      setTotalPages(response.total_pages);
+      setUserPage(response.current_page);
+      setShowingUsers(true); // Show users after loading
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+    }
+  };
+
+  // Load users when the component mounts or userPage changes
   useEffect(() => {
-    // Initialize WebSocket connection
+    loadUsers(userPage);
+  }, [userPage, online, offline]);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    // Initialize the API client
+
+    if (!showingUsers) {
+      const response = await apiClient.getChatroomUsers(
+        token,
+        chatroomId,
+        userPage,
+        5
+      );
+
+      setUsers(response.items);
+
+      setShowingUsers(true);
+    } else {
+      setUsers([]);
+
+      setShowingUsers(false);
+    }
+  };
+
+  const wsUrl = `ws://localhost/ws/chatroom/${chatroomId}`;
+
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+  useEffect(() => {
     const ws = new WebSocket(wsUrl, "ws+meta.nchan");
+    const joinTime = new Date(); // Correctly capture the join time here
+
+    ws.onopen = () => {
+      console.log("WebSocket connection established at", currentTime);
+      // No need to set joinTime here since it's derived from props
+    };
+
     ws.onmessage = (event) => {
       const jsonEvent = JSON.parse(event.data.split("\n\n")[1]);
-      console.log(jsonEvent);
+
       if (jsonEvent.event === "user") {
-        console.log(`USERS : ${jsonEvent.data}`);
         setUsers(jsonEvent.data);
+        console.log(jsonEvent);
       } else if (jsonEvent.event === "message") {
         setMessages((prevMessages) => [...prevMessages, jsonEvent.data]);
       } else if (jsonEvent.event === "update") {
@@ -85,24 +162,42 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
             (message) => message.id === updatedMessage.id
           );
 
-          // If no message is found, just return the current messages without changes
           if (index === -1) {
             return currentMessages;
           }
 
-          // Create a new array with the updated message
           const updatedMessages = [...currentMessages];
           updatedMessages[index] = updatedMessage;
 
           return updatedMessages;
         });
+      } else if (jsonEvent.event === "count_update") {
+        console.log(jsonEvent.data.chatrooms);
+        if (jsonEvent.data.chatrooms) {
+          jsonEvent.data.chatrooms.forEach(
+            (chatroom: {
+              chatroom_id: string;
+              online: number;
+              offline: number;
+            }) => {
+              // Check if this chatroom's ID matches the one you're interested in
+              if (chatroom.chatroom_id === chatroomId) {
+                // Update your component's state with the online and offline counts
+                setOnline(chatroom.online);
+                setOffline(chatroom.offline);
+              }
+            }
+          );
+        }
       }
     };
 
     setWebsocket(ws);
 
     // Clean up on component unmount
-    return () => ws && ws.close();
+    return () => {
+      ws.close();
+    };
   }, [wsUrl]);
 
   if (!token || !username) {
@@ -167,22 +262,52 @@ const ChatRoomComponent: React.FC<ChatRoomProps> = ({
           <div className="flex flex-1 flex-col md:flex-row">
             <div className="md:w-1/4 bg-white shadow-lg rounded-lg p-4 m-2">
               <h3 className="text-lg font-semibold mb-4">Chatroom Users</h3>
-              {users?.users.length ? (
-                <ul className="list-none">
-                  {users.users.map((user) => (
-                    <li
-                      key={user.id}
-                      className={`mb-1 ${
-                        user.online ? "text-green-500" : "text-gray-500"
-                      }`}
-                    >
-                      {user.username}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">No users in chatroom</p>
-              )}
+              <button
+                onClick={handleSubmit}
+                type="submit"
+                className="py-2 px-4 w-full bg-indigo-600 hover:bg-indigo-700 rounded-md text-white text-lg"
+              >
+                {showUserButtonText}
+              </button>
+
+              <div>
+                {showingUsers ? (
+                  <div>
+                    {userPage > 1 && (
+                      <button
+                        onClick={handlePreviousPage}
+                        className="py-2 px-4 mr-2 bg-indigo-600 hover:bg-indigo-700 rounded-md text-white text-lg"
+                      >
+                        Previous Page
+                      </button>
+                    )}
+                    {userPage < totalPages && (
+                      <button
+                        onClick={handleNextPage}
+                        className="py-2 px-4 bg-indigo-600 hover:bg-indigo-700 rounded-md text-white text-lg"
+                      >
+                        Next Page
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+
+              <div> online : {online}</div>
+              <div>offline : {offline}</div>
+
+              <ul className="list-none">
+                {users?.map((user: any) => (
+                  <li
+                    key={user.id}
+                    className={`mb-1 ${
+                      user.online ? "text-green-500" : "text-gray-500"
+                    }`}
+                  >
+                    {user.username}
+                  </li>
+                ))}
+              </ul>
             </div>
             <div className="md:w-3/4 bg-white shadow-lg rounded-lg p-4 m-2">
               <h3 className="text-lg font-semibold mb-4">Messages</h3>
@@ -232,7 +357,7 @@ export const getServerSideProps: GetServerSideProps<ChatRoomProps> = async (
   context
 ) => {
   // ... Your logic to get chatroomUsers and chatRoomMessages
-  const chatroomUsers: ChatroomUsers | null = null; // Replace with actual data fetching logic
+  const chatroomUsers: any | null = null; // Replace with actual data fetching logic
   const chatRoomMessages: ChatRoomMessages | null = null; // Replace with actual data fetching logic
   const token = context.req.cookies.session_token || null;
   const userId = context.req.cookies.user_id || null;
@@ -245,6 +370,7 @@ export const getServerSideProps: GetServerSideProps<ChatRoomProps> = async (
     token,
     chatroomId
   );
+  const currentTime = new Date().toISOString();
 
   return {
     props: {
@@ -255,6 +381,7 @@ export const getServerSideProps: GetServerSideProps<ChatRoomProps> = async (
       chatRoomMessages,
       chatRoomDetails,
       cookies,
+      currentTime,
     },
   };
 };

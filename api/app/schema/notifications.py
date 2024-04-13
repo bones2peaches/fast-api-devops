@@ -21,7 +21,7 @@ class Test(BaseModel):
     created_at: Optional[datetime] = None
 
 
-class Message(BaseModel):
+class NotificationMessage(BaseModel):
 
     type: Literal["message"] = "message"
     user_id: uuid.UUID | str = Field(...)
@@ -29,16 +29,19 @@ class Message(BaseModel):
     chatroom_id: str = Field(...)
     chatroom_name: str = Field(...)
 
+    def event_text(self):
+        return f"{self.username} has seen a message in the chatroom called {self.chatroom_name}!"
+
 
 class Notification(BaseModel):
     event: Annotated[
-        Union[Test, Message],
+        Union[Test, NotificationMessage],
         Field(discriminator="type"),
     ] = Field(...)
 
     id: uuid.UUID | str = Field(...)
     read: Optional[bool] = False
-    created_at: Optional[datetime] = None
+    created_at: Optional[datetime] = datetime.now()
 
     def hash_dict(self) -> dict:
         # Convert Notification fields to a dictionary with string values
@@ -53,11 +56,20 @@ class Notification(BaseModel):
 
         return data
 
-    @root_validator
-    def event_created_at(cls, values):
-        if values["created_at"] is None:
-            values["created_at"] = datetime.now()
-        if values["read"] is None:
-            values["read"] = False
 
-        return values
+class NotificationOut(BaseModel):
+    type: str
+    text: str
+    id: uuid.UUID
+    user_id: uuid.UUID
+    chatroom_id: uuid.UUID
+    created_at: datetime
+    read: bool = False
+
+
+class PaginatedNotificatons(BaseModel):
+    current_page: int = Field(...)
+    total_pages: int = Field(...)
+    total_items: int = Field(...)
+    per_page: int = Field(...)
+    items: List[NotificationOut] = Field(...)

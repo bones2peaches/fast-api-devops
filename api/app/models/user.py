@@ -1,7 +1,7 @@
 import uuid
 import jwt
 from sqlalchemy.exc import IntegrityError, DBAPIError
-from sqlalchemy.orm import backref
+from sqlalchemy.orm import backref, aliased
 from sqlalchemy import (
     String,
     DateTime,
@@ -17,6 +17,8 @@ from sqlalchemy import (
     delete,
     func,
     exists,
+    join,
+    case,
 )
 
 import math
@@ -38,13 +40,22 @@ from app.config import settings as global_settings
 import logging
 from passlib.context import CryptContext
 
-
 user_chatroom_table = Table(
     "user_joined_chatrooms",
     Base.metadata,
     Column("user_id", ForeignKey("users.id")),
     Column("chatroom_id", ForeignKey("chatrooms.id")),
     Column("joined", DateTime, default=datetime.now),
+)
+
+user_notifications = Table(
+    "user_notifications",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id")),
+    Column("notification_id", ForeignKey("notifications.id")),
+    Column("read", Boolean),
+    Column("created_at", DateTime, default=datetime.now),
+    Column("updated_at", DateTime, default=None, nullable=True, onupdate=datetime.now),
 )
 
 
@@ -75,6 +86,103 @@ class Users(Base):
         secondary=user_chatroom_table, back_populates="users"
     )
     online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notifications: Mapped["Notifications"] = relationship(
+        secondary=user_notifications, back_populates="user", lazy="raise"
+    )
+
+    async def get_chatrooms_and_user_counts(self, db: AsyncSession):
+        # Subquery to get chatroom IDs where the specific user is a member
+        user_chatrooms_subquery = (
+            select(user_chatroom_table.c.chatroom_id)
+            .where(user_chatroom_table.c.user_id == self.id)
+            .subquery()
+        )
+
+        # Main query to count online and offline users in those chatrooms
+        stmt = (
+            select(
+                user_chatroom_table.c.chatroom_id,
+                func.sum(case((Users.online == True, 1), else_=0)).label(
+                    "online_count"
+                ),
+                func.sum(case((Users.online == False, 1), else_=0)).label(
+                    "offline_count"
+                ),
+            )
+            .join(Users, user_chatroom_table.c.user_id == Users.id)
+            .where(user_chatroom_table.c.chatroom_id.in_(user_chatrooms_subquery))
+            .group_by(user_chatroom_table.c.chatroom_id)
+        )
+
+        result = await db.execute(stmt)
+        rows = result.fetchall()
+
+        chatrooms_info = [
+            {
+                "chatroom_id": str(row[0]),
+                "online": row[1],
+                "offline": row[2],
+            }
+            for row in rows
+        ]
+
+        return chatrooms_info
+
+    # async def get_chatroom_counts_for_user(self, session):
+    #     # Count up online users per chatroom.
+    #     current_user_id = self.id
+    #     online_subq = (
+    #         select(
+    #             user_chatroom_table.c.chatroom_id,
+    #             func.count(user_chatroom_table.c.user_id).label("online_count"),
+    #         )
+    #         .join(Users, user_chatroom_table.c.user_id == Users.id)
+    #         .where(Users.online == True)
+    #         .group_by(user_chatroom_table.c.chatroom_id)
+    #         .subquery()
+    #     )
+
+    #     # Count up online users per chatroom.
+    #     offline_subq = (
+    #         select(
+    #             user_chatroom_table.c.chatroom_id,
+    #             func.count(user_chatroom_table.c.user_id).label("offline_count"),
+    #         )
+    #         .join(Users, user_chatroom_table.c.user_id == Users.id)
+    #         .where(Users.online == False)
+    #         .group_by(user_chatroom_table.c.chatroom_id)
+    #         .subquery()
+    #     )
+
+    #     # All the chatrooms this user belongs to.
+    #     current_user_chatroom_subq = select(user_chatroom_table.c.chatroom_id).where(
+    #         user_chatroom_table.c.user_id == current_user_id
+    #     )
+    #     # Now get chatrooms with those counts.
+    #     # We use outerjoin because some chatrooms have no matching
+    #     # online and/or offline count and we want those chatrooms
+    #     # to still be included.
+    #     # When those chatrooms are included that missing count would
+    #     # normally be NULL/None but we use coalesce() to tell
+    #     # the database to convert that value to 0.
+    #     q = (
+    #         select(
+    #             Chatrooms.id,
+    #             func.coalesce(online_subq.c.online_count, 0).label("online_count"),
+    #             func.coalesce(offline_subq.c.offline_count, 0).label("offline_count"),
+    #         )
+    #         .outerjoin(online_subq, Chatrooms.id == online_subq.c.chatroom_id)
+    #         .outerjoin(offline_subq, Chatrooms.id == offline_subq.c.chatroom_id)
+    #         .where(Chatrooms.id.in_(current_user_chatroom_subq))
+    #     )
+    #     return [
+    #         {
+    #             "chatroom_id": chatroom_id,
+    #             "online": online_count,
+    #             "offline": offline_count,
+    #         }
+    #         for chatroom_id, online_count, offline_count in (await session.execute(q))
+    #     ]
 
     async def get_user_chatrooms(self, db: AsyncSession) -> List["Chatrooms"]:
         """
@@ -86,8 +194,7 @@ class Users(Base):
         """
         # Create a query that selects chatrooms joined by the given user_id
         stmt = (
-            select(Chatrooms)
-            .options(raiseload("*"))
+            select(Chatrooms.id)
             .join(
                 user_chatroom_table, Chatrooms.id == user_chatroom_table.c.chatroom_id
             )
@@ -98,6 +205,26 @@ class Users(Base):
         chatrooms = result.scalars().all()
 
         return chatrooms
+
+    async def associate_users_with_notification(
+        self,
+        session: AsyncSession,
+        notification_ids: list[uuid.UUID],
+    ):
+
+        entries = [
+            {
+                "user_id": self.id,
+                "notification_id": n_id,
+                "read": True,
+                "updated_at": datetime.now(),
+            }
+            for n_id in notification_ids
+        ]
+
+        # Execute the insert operation
+        await session.execute(insert(user_notifications).values(entries))
+        await session.commit()
 
     @classmethod
     async def find(cls, db_session: AsyncSession, username: str):
@@ -251,6 +378,61 @@ class Chatrooms(Base):
     users: Mapped[List[Users]] = relationship(
         secondary=user_chatroom_table, back_populates="chatrooms"
     )
+
+    async def get_online_users(self, db: AsyncSession):
+        stmt = (
+            select(Users.id)
+            .join(user_chatroom_table, Users.id == user_chatroom_table.c.user_id)
+            .where(
+                user_chatroom_table.c.chatroom_id == self.id
+            )  # Existing condition for specific chatroom
+            .where(
+                Users.online == True
+            )  # Additional condition for filtering online users
+        )
+        result = await db.execute(stmt)
+        users = result.scalars().all()  # Extracting user IDs as a list of integers
+
+        # Joining the user IDs into a single string separated by commas
+        user_ids_string = ",".join(
+            map(str, users)
+        )  # Converts each user ID to string and joins them with commas
+        return user_ids_string
+
+    async def get_online_and_offline_user(self, db: AsyncSession):
+        stmt = (
+            select(Users)
+            .join(user_chatroom_table, Users.id == user_chatroom_table.c.user_id)
+            .where(
+                user_chatroom_table.c.chatroom_id == self.id
+            )  # Existing condition for specific chatroom
+        )
+        result = await db.execute(stmt)
+        users = result.scalars().all()  # Extracting user IDs as a list of integers
+
+        online_string = ","
+        for user in users:
+            if user.online is True:
+                online_string = online_string + f"{str(user.id)},"
+
+        return {"online": online_string, "users": users}
+
+    async def user_count(self, db: AsyncSession):
+
+        stmt = (
+            select(Users.id, Users.username, Users.online)
+            .join(user_chatroom_table, Users.id == user_chatroom_table.c.user_id)
+            .where(user_chatroom_table.c.chatroom_id == self.id)
+        )
+
+        result = await db.execute(stmt)
+        users = result.mappings().all()  # Fetch all results as a list of dictionaries
+
+        # Split into online and offline users based on their status
+        online = sum(user["online"] for user in users)
+        offline = len(users) - online
+
+        return {"online": online, "offline": offline}
 
     @classmethod
     async def find(
@@ -516,3 +698,159 @@ class MessageReactions(Base):
             return None
         else:
             return instance
+
+
+class Notifications(Base):
+
+    id: Mapped[uuid:UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        unique=True,
+        default=uuid.uuid4,
+    )
+
+    user: Mapped["Users"] = relationship(back_populates="notifications", lazy="raise")
+    user_id: Mapped[uuid:UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now
+    )
+
+    read: Mapped[bool] = mapped_column(nullable=False, default=False)
+    data: Mapped[dict] = mapped_column(type_=JSON, nullable=False)
+    type: Mapped[str] = mapped_column(nullable=False)
+
+    @classmethod
+    async def create(
+        cls,
+        db: AsyncSession,
+        id: str | uuid.UUID,
+        user_id: str | uuid.UUID,
+        created_at: datetime,
+        type: str,
+        data: any,
+    ):
+
+        notif = cls(id=id, type=type, user_id=user_id, created_at=created_at, data=data)
+        db.add(notif)
+        await db.commit()
+        return notif
+
+    @classmethod
+    async def update(
+        cls, db: AsyncSession, id: str | uuid.UUID, user_id: str | uuid.UUID
+    ):
+        stmt = (
+            update(user_notifications)
+            .where(
+                user_notifications.c.user_id == user_id,
+                user_notifications.c.notification_id == id,
+            )
+            .values(read=True)
+        )
+
+        # Execute the insert operation
+        await db.execute(stmt)
+        await db.commit()
+
+    async def associate_users_with_notification(
+        self,
+        session: AsyncSession,
+        users: list[Users],
+    ):
+
+        entries = [
+            {
+                "user_id": user.id,
+                "notification_id": self.id,
+                "read": False,
+                "created_at": datetime.now(),
+            }
+            for user in users
+        ]
+
+        # Execute the insert operation
+        await session.execute(insert(user_notifications).values(entries))
+        await session.commit()
+
+    @classmethod
+    async def paginate(
+        cls,
+        db_session: AsyncSession,
+        user: Users,
+        page: int,
+        per_page: int,
+    ):
+        base_query = (
+            select(
+                Notifications.id,
+                Notifications.data,
+                Notifications.type,
+                Notifications.user_id,
+                user_chatroom_table.chatroom_id,
+                Notifications.created_at,
+            )
+            .join(
+                user_notifications,
+                Notifications.id == user_notifications.c.notification_id,
+            )
+            .where(
+                user_notifications.c.read == False,
+                user_notifications.c.user_id == user.id,
+            )
+            .order_by(Notifications.created_at.desc())
+        )
+
+        final_stmt = (
+            base_query.add_columns(
+                Notifications.id,
+                Notifications.data["text"].label(
+                    "text"
+                ),  # Assuming 'text' is stored in data JSON field
+                Notifications.type,
+                Notifications.user_id,
+                Notifications.chatroom_id,
+                Notifications.created_at,
+                user_notifications.c.read.label(
+                    "read"
+                ),  # Assuming you want to check if a notification is read
+            )
+            .offset(offset)
+            .limit(per_page)
+        )
+
+        count_stmt = select(func.count()).select_from(base_query.subquery())
+        total_items_result = await db_session.execute(count_stmt)
+        total_items = total_items_result.scalar_one()
+
+        total_pages = math.ceil(total_items / per_page)
+        offset = (page - 1) * per_page
+
+        # Apply pagination to the base query
+        final_stmt = final_stmt.offset(offset).limit(per_page)
+        notifications_result = await db_session.execute(final_stmt)
+        notifications_db = notifications_result.all()
+
+        # Convert database results into NotificationOut objects
+        items = [
+            dict(
+                id=notification.id,
+                text=notification.text,
+                type=notification.type,
+                user_id=notification.user_id,
+                chatroom_id=notification.chatroom_id,
+                created_at=notification.created_at,
+                read=notification.read,
+            )
+            for notification in notifications_db
+        ]
+
+        return dict(
+            current_page=page,
+            total_pages=total_pages,
+            total_items=total_items,
+            per_page=per_page,
+            items=items,
+        )
